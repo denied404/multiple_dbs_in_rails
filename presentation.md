@@ -7,7 +7,7 @@ institution
 : Rapid River Software
 
 theme
-: rabbit
+: rrsoft
 
 # whoami
 ![](images/me.png){:relative_width="15"}
@@ -15,7 +15,7 @@ theme
 * Weird sounding russian guy
 * Armchair guitar player
 * Son, husband, father
-* Yack shaver at Rapid River Software
+* Yak shaver at Rapid River Software
 
 # Stay cool  
 ![](images/stay_cool.jpg){:relative_height="80"}
@@ -87,14 +87,19 @@ theme
 ```
 /config/initializers/databases.rb:
 
-ALL_ENV_DB_CONFIGS = [:db1, :db2, ...].each_with_object(HashWithIndifferentAccess.new) do |db, dbs|
+ALL_ENV_DB_CONFIGS = [:db1, :db2, ...].each_with_object(
+  HashWithIndifferentAccess.new
+) do |db, dbs|
   f = File.read(Rails.root.join('config', 'database', "#{db}.yml"))
   config = YAML.load(ERB.new(f).result)
   dbs[db] = HashWithIndifferentAccess.new(config)
 end
 
-DB_CONFIGS = ALL_ENV_DB_CONFIGS.keys.each_with_object(HashWithIndifferentAccess.new) do |db, dbs|
-  raise("No configuration for #{db} in #{Rails.env} environment!") unless ALL_ENV_DB_CONFIGS[db][Rails.env]
+DB_CONFIGS = ALL_ENV_DB_CONFIGS.keys.each_with_object(
+  HashWithIndifferentAccess.new
+) do |db, dbs|
+  raise("No configuration for #{db} in #{Rails.env} environment!")
+    unless ALL_ENV_DB_CONFIGS[db][Rails.env]
   dbs[db] = ALL_ENV_DB_CONFIGS[db][Rails.env]
 end
 ```
@@ -108,17 +113,18 @@ end
 ...
 OurApp::Db.select_current_database('db1')
 ...
+```
 
+# What does it do?
+
+```
 /lib/ourapp/db.rb:
 
 module OurApp
   module Db
-    def self.select_current_database(name)
-      @database ||= :db1
-      point_to(name)
-    end
 
-    private_class_method def self.point_to(name)
+    def self.select_current_database(name)
+      @current_database = name
       root = "db/#{name}"
       Rails.application.config.paths['db']               = root
       Rails.application.config.paths['db/migrate']       = "#{root}/migrate"
@@ -128,6 +134,14 @@ module OurApp
       ENV['SCHEMA'] = "#{root}/schema.rb"
       ENV['DB_STRUCTURE'] = "#{root}/structure.sql"
     end
+
+    def self.on_database(name, &block)
+      old_db = @current_database
+      select_current_database(name)
+      yield
+      select_current_database(old_db)
+    end
+
   end
 end
 ```
@@ -174,6 +188,13 @@ module FooDb
     self.abstract_class = true
   end
 end
+
+module FooDb
+  class User < Base
+    validates :email, presence: true
+    ...
+  end
+end
 ```
 
 # Create migration generators
@@ -182,11 +203,14 @@ end
 ```
 require 'rails/generators/active_record/migration/migration_generator'
 
-class FooDbMigrationGenerator < ActiveRecord::Generators::MigrationGenerator
+class FooDbMigrationGenerator <
+      ActiveRecord::Generators::MigrationGenerator
+
   def create_migration_file
     set_local_assigns!
     validate_file_name!
-    migration_template @migration_template, "db/foo_db/migrate/#{file_name}.rb"
+    migration_template @migration_template,
+                       "db/foo_db/migrate/#{file_name}.rb"
   end
 end
 
@@ -201,11 +225,13 @@ rails generate foo_db_migration AddBarToFoo
 
 ```
 namespace :foo_db do |ns|
-  [:drop, :create, :migrate, :reset, :rollback, :seed, :setup, :version].each do |tsk|
+  [:drop, :create, :migrate, :reset, :rollback,
+   :seed, :setup, :version].each do |tsk|
     desc "MH database: #{tsk}"
     task tsk do
-      OurApp::Db.select_current_database(:foo_db) 
-      Rake::Task["db:#{tsk}"].invoke
+      OurApp::Db.on_database(:foo_db) do
+        Rake::Task["db:#{tsk}"].invoke
+      end
     end
   end
 end
